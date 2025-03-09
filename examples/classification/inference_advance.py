@@ -19,6 +19,7 @@ from PIL import Image
 import cv2
 from pathlib import Path
 import urllib.request
+import requests
 
 from mmpretrain import (
     get_model,
@@ -26,6 +27,24 @@ from mmpretrain import (
     FeatureExtractor,
     list_models
 )
+from imagenet_categories import IMAGENET_CATEGORIES
+from pytorch_grad_cam import GradCAM
+from pytorch_grad_cam.utils.image import show_cam_on_image
+
+# 设置中文字体
+def set_chinese_font():
+    """设置matplotlib中文字体"""
+    try:
+        # 尝试使用微软雅黑字体
+        plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'Arial Unicode MS', 'sans-serif']
+        plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+        print("成功设置中文字体")
+    except Exception as e:
+        print(f"设置中文字体时出错: {e}")
+        print("将使用默认字体，中文可能无法正确显示")
+
+# 调用设置中文字体函数
+set_chinese_font()
 
 # 创建数据目录
 DATA_DIR = Path("./data")
@@ -58,30 +77,12 @@ def custom_config_inference():
     # 下载示例图像
     image_path = download_image()
     
-    # 创建自定义配置
-    # 这里我们使用ResNet-18模型，但修改了预处理和后处理参数
-    model_cfg = dict(
-        type='ImageClassifier',
-        backbone=dict(
-            type='ResNet',
-            depth=18,
-            num_stages=4,
-            out_indices=(3,),
-            style='pytorch'),
-        neck=dict(type='GlobalAveragePooling'),
-        head=dict(
-            type='LinearClsHead',
-            num_classes=1000,
-            in_channels=512,
-            loss=dict(type='CrossEntropyLoss'),
-            topk=(1, 5),
-        )
-    )
+    # 使用预定义模型而不是自定义配置
+    # 这样更兼容最新版本的 mmpretrain
     
-    # 创建推理器，使用自定义配置
+    # 创建推理器
     inferencer = ImageClassificationInferencer(
-        model=model_cfg,
-        pretrained='https://download.openmmlab.com/mmclassification/v0/resnet/resnet18_8xb32_in1k_20210831-fbbb1da6.pth',
+        model='resnet18_8xb32_in1k',  # 使用预定义的模型名称
         device='cpu'  # 使用CPU进行推理，如果有GPU可以改为'cuda'
     )
     
@@ -154,9 +155,6 @@ def custom_preprocessing_inference():
     # 获取前5个预测结果
     topk_values, topk_indices = torch.topk(probabilities, 5)
     
-    # 获取ImageNet类别名称
-    from mmpretrain.datasets import IMAGENET_CATEGORIES
-    
     print("前5个预测结果:")
     for i, (score, idx) in enumerate(zip(topk_values.tolist(), topk_indices.tolist())):
         class_name = IMAGENET_CATEGORIES[idx]
@@ -217,7 +215,7 @@ def visualize_cam():
     target_layers = [model.backbone.layer4[-1]]
     
     # 创建GradCAM对象
-    cam = GradCAM(model=model, target_layers=target_layers, use_cuda=False)
+    cam = GradCAM(model=model, target_layers=target_layers)
     
     # 生成CAM
     grayscale_cam = cam(input_tensor=input_tensor)
@@ -256,12 +254,33 @@ def batch_inference_with_topk():
     # 创建推理器
     inferencer = ImageClassificationInferencer('resnet50_8xb32_in1k')
     
-    # 设置推理参数，返回top-5结果
-    result = inferencer(image_path, topk=5)[0]
+    # 进行推理，不使用 topk 参数
+    result = inferencer(image_path)[0]
+    
+    # 手动获取 top-5 结果
+    # 获取预测概率和对应的类别索引
+    pred_scores = result['pred_score']
+    if isinstance(pred_scores, float):  # 如果只返回了一个分数
+        top5_scores = [pred_scores]
+        top5_classes = [result['pred_class']]
+    else:  # 如果返回了多个分数
+        # 获取前5个最高分数的索引
+        if len(pred_scores) > 5:
+            top5_indices = np.argsort(pred_scores)[-5:][::-1]
+            top5_scores = [pred_scores[i] for i in top5_indices]
+            # 假设 pred_class 是一个列表，包含所有类别名称
+            if isinstance(result['pred_class'], list) and len(result['pred_class']) > 5:
+                top5_classes = [result['pred_class'][i] for i in top5_indices]
+            else:
+                # 如果 pred_class 不是列表或长度不够，使用 IMAGENET_CATEGORIES
+                top5_classes = [IMAGENET_CATEGORIES[i] for i in top5_indices]
+        else:
+            top5_scores = pred_scores
+            top5_classes = result['pred_class']
     
     # 显示top-k结果
     print("Top-5 预测结果:")
-    for i, (cls_name, score) in enumerate(zip(result['pred_class'], result['pred_score'])):
+    for i, (cls_name, score) in enumerate(zip(top5_classes, top5_scores)):
         print(f"{i+1}. {cls_name}: {score:.4f}")
     
     # 可视化top-k结果
@@ -276,9 +295,9 @@ def batch_inference_with_topk():
     
     # 显示条形图
     plt.subplot(1, 2, 2)
-    y_pos = np.arange(len(result['pred_class']))
-    plt.barh(y_pos, result['pred_score'], align='center')
-    plt.yticks(y_pos, result['pred_class'])
+    y_pos = np.arange(len(top5_classes))
+    plt.barh(y_pos, top5_scores, align='center')
+    plt.yticks(y_pos, top5_classes)
     plt.xlabel('置信度')
     plt.title('Top-5 预测结果')
     

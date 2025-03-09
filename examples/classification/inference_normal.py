@@ -23,6 +23,7 @@ from mmpretrain import (
     ImageClassificationInferencer,
     FeatureExtractor
 )
+from imagenet_categories import IMAGENET_CATEGORIES
 
 
 def show_result(img_path, result):
@@ -45,7 +46,7 @@ def example_inference_model():
     # 使用预训练的ResNet-50模型
     model_name = 'resnet50_8xb32_in1k'
     # 替换为您自己的图像路径
-    image_path = 'path/to/your/image.jpg'
+    image_path = './data/dog.jpg'
     
     # 如果没有图形界面，请设置show=False
     result = inference_model(model_name, image_path, show=False)
@@ -68,7 +69,7 @@ def example_classification_inferencer():
     inferencer = ImageClassificationInferencer('resnet50_8xb32_in1k')
     
     # 单张图像推理
-    image_path = 'path/to/your/image.jpg'
+    image_path = './data/dog.jpg'
     result = inferencer(image_path)[0]  # 注意inferencer返回的是结果列表
     
     print(f"单张图像推理结果:")
@@ -76,7 +77,7 @@ def example_classification_inferencer():
     print(f"预测置信度: {result['pred_score']:.4f}")
     
     # 批量推理
-    image_list = ['path/to/image1.jpg', 'path/to/image2.jpg']
+    image_list = ['./data/bird.JPEG', './data/dog.jpg', './data/demo.JPEG']
     results = inferencer(image_list, batch_size=2)
     
     print(f"\n批量推理结果:")
@@ -95,7 +96,7 @@ def example_get_model():
     model.eval()
     
     # 准备输入数据
-    image_path = 'path/to/your/image.jpg'
+    image_path = './data/dog.jpg'
     img = Image.open(image_path).convert('RGB')
     img = img.resize((224, 224))
     
@@ -119,7 +120,6 @@ def example_get_model():
     pred_score, pred_label = torch.max(probabilities, dim=0)
     
     # 获取ImageNet类别名称
-    from mmpretrain.datasets import IMAGENET_CATEGORIES
     pred_class = IMAGENET_CATEGORIES[pred_label.item()]
     
     print(f"预测类别: {pred_class}")
@@ -140,7 +140,7 @@ def example_feature_extractor():
     extractor = FeatureExtractor(model)
     
     # 提取特征
-    image_path = 'path/to/your/image.jpg'
+    image_path = './data/dog.jpg'
     features = extractor(image_path)[0]
     
     # 打印每个阶段的特征形状
@@ -150,12 +150,25 @@ def example_feature_extractor():
     # 可视化特征（以第一个特征为例）
     if len(features) > 0:
         # 取第一个特征的均值
-        feature_map = features[0].mean().numpy()
-        plt.figure(figsize=(6, 6))
-        plt.imshow(feature_map, cmap='viridis')
-        plt.title("特征可视化")
-        plt.colorbar()
-        plt.show()
+        feature_map = features[0].mean(dim=0).numpy()
+        
+        # 检查特征图的形状
+        if len(feature_map.shape) == 0:  # 如果是标量
+            print(f"特征是标量值: {feature_map}, 无法可视化")
+        elif len(feature_map.shape) == 1:  # 如果是一维向量
+            plt.figure(figsize=(10, 4))
+            plt.plot(feature_map)
+            plt.title("特征向量可视化")
+            plt.xlabel("特征维度")
+            plt.ylabel("特征值")
+            plt.grid(True)
+            plt.show()
+        else:  # 如果是二维或更高维
+            plt.figure(figsize=(6, 6))
+            plt.imshow(feature_map, cmap='viridis')
+            plt.title("特征可视化")
+            plt.colorbar()
+            plt.show()
 
 
 def list_available_models():

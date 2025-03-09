@@ -8,9 +8,7 @@ MMPretrain图像分类数据集下载脚本
 """
 
 import os
-import sys
 import argparse
-import tarfile
 import shutil
 import zipfile
 from pathlib import Path
